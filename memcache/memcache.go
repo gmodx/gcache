@@ -3,17 +3,27 @@ package memcache
 import (
 	"sync"
 	"time"
+
+	"github.com/gmodx/gcache/abstract"
 )
 
-var _ IMemCache[interface{}] = (*MemCache[interface{}])(nil)
+var _ abstract.ICache[interface{}] = (*MemCache[interface{}])(nil)
 
 type MemCache[T interface{}] struct {
 	mu       sync.RWMutex
-	options  Options
+	options  MemCacheOptions
 	cacheMap map[string]*CacheEntity[T]
 }
 
-// Get implements IMemCache
+type MemCacheOptions struct {
+	CleanupInterval time.Duration
+}
+
+var defaultOptions = MemCacheOptions{
+	CleanupInterval: time.Minute,
+}
+
+// Get retrieves an item from the cache by its key.
 func (mc *MemCache[T]) Get(key string) *T {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -25,28 +35,30 @@ func (mc *MemCache[T]) Get(key string) *T {
 	return nil
 }
 
+// Refresh updates the expiration time of an item in the cache.
 func (mc *MemCache[T]) Refresh(key string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	if val, ok := mc.cacheMap[key]; ok && !val.Expired() {
-		now := time.Now()
-		mc.cacheMap[key].expiredTime = now.Add(mc.options.Expiration)
+		mc.cacheMap[key].expiredTime = time.Now().Add(val.expiration)
 	}
 }
 
-func (mc *MemCache[T]) Set(key string, val T) {
+// Set adds or updates an item in the cache by its key.
+func (mc *MemCache[T]) Set(key string, val T, opts abstract.CacheEntryOptions) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	now := time.Now()
 	mc.cacheMap[key] = &CacheEntity[T]{
-		expiredTime: now.Add(mc.options.Expiration),
+		expiredTime: now.Add(opts.Expiration),
+		expiration:  opts.Expiration,
 		item:        val,
 	}
 }
 
-// Delete one cache if existed
+// Remove deletes an item from the cache by its key, if it exists.
 func (mc *MemCache[T]) Remove(key string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -54,7 +66,8 @@ func (mc *MemCache[T]) Remove(key string) {
 	delete(mc.cacheMap, key)
 }
 
-func New[T interface{}](opts Options) *MemCache[T] {
+// New creates a new MemCache with the given options.
+func New[T interface{}](opts MemCacheOptions) *MemCache[T] {
 	gc := &MemCache[T]{
 		options:  opts,
 		cacheMap: map[string]*CacheEntity[T]{},
@@ -64,10 +77,12 @@ func New[T interface{}](opts Options) *MemCache[T] {
 	return gc
 }
 
+// NewDefault creates a new MemCache with default options.
 func NewDefault[T interface{}]() *MemCache[T] {
 	return New[T](defaultOptions)
 }
 
+// startClearJob starts a goroutine that periodically deletes expired items from the cache.
 func (mc *MemCache[T]) startClearJob() {
 	t := time.NewTicker(mc.options.CleanupInterval)
 	defer t.Stop()
@@ -80,7 +95,7 @@ func (mc *MemCache[T]) startClearJob() {
 	}
 }
 
-// Clear all cache
+// Flush removes all items from the cache.
 func (mc *MemCache[T]) Flush() {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -88,7 +103,7 @@ func (mc *MemCache[T]) Flush() {
 	mc.cacheMap = map[string]*CacheEntity[T]{}
 }
 
-// Delete all expired items.
+// DeleteAllExpired deletes all expired items from the cache.
 func (gc *MemCache[T]) DeleteAllExpired() {
 	gc.mu.Lock()
 	defer gc.mu.Unlock()

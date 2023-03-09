@@ -1,4 +1,4 @@
-module github.com/gmodx/memcache
+module github.com/gmodx/gcache
 
 go 1.19
 
