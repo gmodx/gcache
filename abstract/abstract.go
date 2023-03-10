@@ -1,13 +1,16 @@
 package abstract
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ICache is an interface that defines the basic operations of a cache.
 type ICache[T interface{}] interface {
-	Get(key string) *T
-	Set(key string, val T, opts CacheEntryOptions)
-	Remove(key string)
-	Refresh(key string)
+	Get(ctx context.Context, key string) (*T, error)
+	Set(ctx context.Context, key string, val T, opts CacheEntryOptions) error
+	Remove(ctx context.Context, key string) error
+	Refresh(ctx context.Context, key string) error
 }
 
 // CacheEntryOptions represents options for a cached item.

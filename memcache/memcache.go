@@ -1,6 +1,7 @@
 package memcache
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -11,42 +12,44 @@ var _ abstract.ICache[interface{}] = (*MemCache[interface{}])(nil)
 
 type MemCache[T interface{}] struct {
 	mu       sync.RWMutex
-	options  MemCacheOptions
+	options  Options
 	cacheMap map[string]*CacheEntity[T]
 }
 
-type MemCacheOptions struct {
+type Options struct {
 	CleanupInterval time.Duration
 }
 
-var defaultOptions = MemCacheOptions{
+var defaultOptions = Options{
 	CleanupInterval: time.Minute,
 }
 
 // Get retrieves an item from the cache by its key.
-func (mc *MemCache[T]) Get(key string) *T {
+func (mc *MemCache[T]) Get(ctx context.Context, key string) (*T, error) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	if val, ok := mc.cacheMap[key]; ok && !val.Expired() {
-		return &val.item
+		return &val.item, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // Refresh updates the expiration time of an item in the cache.
-func (mc *MemCache[T]) Refresh(key string) {
+func (mc *MemCache[T]) Refresh(ctx context.Context, key string) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	if val, ok := mc.cacheMap[key]; ok && !val.Expired() {
 		mc.cacheMap[key].expiredTime = time.Now().Add(val.expiration)
 	}
+
+	return nil
 }
 
 // Set adds or updates an item in the cache by its key.
-func (mc *MemCache[T]) Set(key string, val T, opts abstract.CacheEntryOptions) {
+func (mc *MemCache[T]) Set(ctx context.Context, key string, val T, opts abstract.CacheEntryOptions) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
@@ -56,18 +59,21 @@ func (mc *MemCache[T]) Set(key string, val T, opts abstract.CacheEntryOptions) {
 		expiration:  opts.Expiration,
 		item:        val,
 	}
+
+	return nil
 }
 
 // Remove deletes an item from the cache by its key, if it exists.
-func (mc *MemCache[T]) Remove(key string) {
+func (mc *MemCache[T]) Remove(ctx context.Context, key string) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
 	delete(mc.cacheMap, key)
+	return nil
 }
 
 // New creates a new MemCache with the given options.
-func New[T interface{}](opts MemCacheOptions) *MemCache[T] {
+func New[T interface{}](opts Options) *MemCache[T] {
 	gc := &MemCache[T]{
 		options:  opts,
 		cacheMap: map[string]*CacheEntity[T]{},
